@@ -89,6 +89,7 @@ while cap.isOpened():
     keypoints_with_scores = results['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))
 
     # Draw bounding boxes; will later compare with color filter to determine commander
+    # [ymin, xmin, ymax, xmax, confidence_score], coordinates are normalized.
     bounding_boxes = results['output_0'].numpy()[:, :, 51:56].reshape((6, 5, 1))
     y, x, _ = frame.shape
     for bb in bounding_boxes:
