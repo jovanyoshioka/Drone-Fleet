@@ -8,6 +8,22 @@ import tensorflow as tf
 import tensorflow_hub as hub
 import cv2 as cv
 import numpy as np
+from enum import Enum
+
+
+class Status(Enum):
+    DISCONNECTED = 1
+    WAITING = 2
+    TAKING_OFF = 3
+    HOVERING = 4
+    LANDING = 5
+
+
+class Drone:
+    def __init__(self):
+        self.is_left_drone = False
+        self.status = Status.DISCONNECTED
+
 
 EDGES = {
     (0, 1): 'm',
@@ -74,7 +90,7 @@ def display_text(text, frame, position):
 # Gestures supported: hands above/up/down
 # keypoints_with_scores: [nose, left eye, right eye, left ear, right ear, left shoulder, right shoulder, left elbow,
 #   right elbow, left wrist, right wrist, left hip, right hip, left knee, right knee, left ankle, right ankle].
-def detect_gestures(keypoints_with_scores, frame):
+def detect_gestures(keypoints_with_scores, frame, drone):
     frame_height, frame_width, _ = frame.shape
     keypoints_with_scores = np.multiply(keypoints_with_scores, [frame_height, frame_width, 1])
 
@@ -87,25 +103,51 @@ def detect_gestures(keypoints_with_scores, frame):
     right_elbow = keypoints_with_scores[8]
 
     # Left hand up or down respectively, verify left wrist/elbow confidence score.
-    if nose[2] > POSE_CONFIDENCE_THRESH and left_wrist[2] > POSE_CONFIDENCE_THRESH and left_elbow[2] > POSE_CONFIDENCE_THRESH:
+    if nose[2] > POSE_CONFIDENCE_THRESH and left_wrist[2] > POSE_CONFIDENCE_THRESH:
         if left_wrist[0] < nose[0]:
             display_text("LEFT HAND ABOVE", frame, (10, 25))
-        elif is_vertically_aligned(left_wrist, left_elbow, frame_width):
-            display_text("LEFT HAND UP", frame, (10, 25))
-        elif is_vertically_aligned(left_elbow, left_wrist, frame_width):
-            display_text("LEFT HAND DOWN", frame, (10, 25))
+            if drone.is_left_drone and drone.status is Status.HOVERING:
+                # TODO: Send land drone command
+                print("Landing left drone.")
+                drone.status = Status.LANDING
+        elif left_elbow[2] > POSE_CONFIDENCE_THRESH:
+            if is_vertically_aligned(left_wrist, left_elbow, frame_width):
+                display_text("LEFT HAND UP", frame, (10, 25))
+                if drone.is_left_drone and drone.status is Status.WAITING:
+                    # TODO: Send take off drone command
+                    print("Left drone taking off.")
+                    drone.status = Status.TAKING_OFF
+                    # TODO: Change from TAKING_OFF to HOVERING
+                    drone.status = Status.HOVERING
+            elif is_vertically_aligned(left_elbow, left_wrist, frame_width):
+                display_text("LEFT HAND DOWN", frame, (10, 25))
 
     # Right hand up or down respectively, verify right wrist/elbow confidence score.
-    if nose[2] > POSE_CONFIDENCE_THRESH and right_wrist[2] > POSE_CONFIDENCE_THRESH and right_elbow[2] > POSE_CONFIDENCE_THRESH:
+    if nose[2] > POSE_CONFIDENCE_THRESH and right_wrist[2] > POSE_CONFIDENCE_THRESH:
         if right_wrist[0] < nose[0]:
             display_text("RIGHT HAND ABOVE", frame, (10, 55))
-        elif is_vertically_aligned(right_wrist, right_elbow, frame_width):
-            display_text("RIGHT HAND UP", frame, (10, 55))
-        elif is_vertically_aligned(right_elbow, right_wrist, frame_width):
-            display_text("RIGHT HAND DOWN", frame, (10, 55))
+            if not drone.is_left_drone and drone.status is Status.HOVERING:
+                # TODO: Send land drone command
+                print("Landing right drone.")
+                drone.status = Status.LANDING
+        elif right_elbow[2] > POSE_CONFIDENCE_THRESH:
+            if is_vertically_aligned(right_wrist, right_elbow, frame_width):
+                display_text("RIGHT HAND UP", frame, (10, 55))
+                if not drone.is_left_drone and drone.status is Status.WAITING:
+                    # TODO: Send take off drone command
+                    print("Right drone taking off.")
+                    drone.status = Status.TAKING_OFF
+                    # TODO: Change from TAKING_OFF to HOVERING
+                    drone.status = Status.HOVERING
+            elif is_vertically_aligned(right_elbow, right_wrist, frame_width):
+                display_text("RIGHT HAND DOWN", frame, (10, 55))
 
 
 def main():
+    drone = Drone()
+    # Connect to Drone
+    drone.status = Status.WAITING
+
     # If using GPU, prevent TensorFlow from consuming all RAM
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
@@ -137,7 +179,10 @@ def main():
         draw_connections(frame, keypoints_with_scores, EDGES, POSE_CONFIDENCE_THRESH)
         draw_keypoints(frame, keypoints_with_scores, POSE_CONFIDENCE_THRESH)
 
-        detect_gestures(keypoints_with_scores, frame)
+        detect_gestures(keypoints_with_scores, frame, drone)
+
+        # Status of Drone
+        display_text(str(drone.status)[7:], frame, (10, 85))
 
         cv.imshow('SinglePose', frame)
 
